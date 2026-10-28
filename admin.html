@@ -1,0 +1,177 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin GPS Panel</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #101827;
+      color: white;
+      padding: 20px;
+    }
+    main {
+      max-width: 850px;
+      margin: auto;
+    }
+    input, button {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 12px;
+      margin: 6px 0;
+      border-radius: 8px;
+    }
+    button { cursor: pointer; }
+    input { border: 1px solid #aaa; }
+    article {
+      background: #1e293b;
+      padding: 15px;
+      margin: 12px 0;
+      border-radius: 10px;
+      overflow-wrap: anywhere;
+    }
+    a { color: #93c5fd; }
+    #status { white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Admin GPS Panel</h1>
+  <p>Only consented location shares are displayed.</p>
+
+  <section id="login">
+    <input id="email" type="email"
+      placeholder="Admin email" autocomplete="username">
+    <input id="password" type="password"
+      placeholder="Password" autocomplete="current-password">
+    <button id="loginBtn">Login</button>
+  </section>
+
+  <p id="status" role="status"></p>
+  <section id="results"></section>
+  <button id="logoutBtn" hidden>Logout</button>
+</main>
+
+<script type="module">
+import { initializeApp } from
+  "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+import {
+  getAuth, signInWithEmailAndPassword, onAuthStateChanged,
+  signOut
+} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+import {
+  getFirestore, doc, getDoc, collection, getDocs
+} from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCO4yzdUKAiqPXr-raA-2bbyaN-ffaYDOI",
+  authDomain: "adminpnal.firebaseapp.com",
+  projectId: "adminpnal",
+  storageBucket: "adminpnal.firebasestorage.app",
+  messagingSenderId: "65312084790",
+  appId: "1:65312084790:web:6dfee5894652a000395997",
+  measurementId: "G-B7BGB87FMD"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const statusEl = document.querySelector("#status");
+const results = document.querySelector("#results");
+const login = document.querySelector("#login");
+const logoutBtn = document.querySelector("#logoutBtn");
+
+function status(message) {
+  statusEl.textContent = message;
+}
+
+function addText(parent, label, value) {
+  const p = document.createElement("p");
+  p.textContent = label + ": " + value;
+  parent.appendChild(p);
+}
+
+async function showLocations(user) {
+  results.replaceChildren();
+
+  const adminDoc = await getDoc(doc(db, "admins", user.uid));
+  if (!adminDoc.exists()) {
+    status("Access denied: this account is not an admin.");
+    return;
+  }
+
+  const snapshot = await getDocs(collection(db, "sharedLocations"));
+
+  if (snapshot.empty) {
+    status("Admin verified. No location shares yet.");
+    return;
+  }
+
+  status("Admin verified. Shares: " + snapshot.size);
+
+  snapshot.forEach(item => {
+    const d = item.data();
+    if (d.consent !== true) return;
+
+    const card = document.createElement("article");
+    addText(card, "User ID", item.id);
+    addText(card, "Latitude", d.latitude);
+    addText(card, "Longitude", d.longitude);
+    addText(card, "Accuracy", d.accuracy + " metres");
+    addText(card, "Shared at",
+      d.sharedAt?.toDate?.().toLocaleString() ?? "Unknown");
+    addText(card, "Browser / device",
+      d.userAgent ?? "Not available");
+
+    if (typeof d.latitude === "number" &&
+        typeof d.longitude === "number") {
+      const map = document.createElement("a");
+      map.href = "https://www.google.com/maps?q=" +
+        encodeURIComponent(d.latitude + "," + d.longitude);
+      map.target = "_blank";
+      map.rel = "noopener noreferrer";
+      map.textContent = "Open shared location in Maps";
+      card.appendChild(map);
+    }
+
+    results.appendChild(card);
+  });
+}
+
+document.querySelector("#loginBtn").onclick = async () => {
+  status("Logging in...");
+  try {
+    await signInWithEmailAndPassword(
+      auth,
+      document.querySelector("#email").value.trim(),
+      document.querySelector("#password").value
+    );
+  } catch (e) {
+    status("Login failed: " + e.message);
+  }
+};
+
+logoutBtn.onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, async user => {
+  login.hidden = !!user;
+  logoutBtn.hidden = !user;
+  results.replaceChildren();
+
+  if (!user) {
+    status("Please log in with your admin account.");
+    return;
+  }
+
+  try {
+    await showLocations(user);
+  } catch (e) {
+    status("Could not load data: " + e.message);
+  }
+});
+</script>
+</body>
+</html>
